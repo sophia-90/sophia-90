@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Snake Game with Bouncing Balls</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a1a;
+            flex-direction: column;
+        }
+
+        canvas {
+            border: 2px solid #fff;
+            background: #000;
+        }
+
+        #score {
+            color: white;
+            font-size: 24px;
+            margin: 20px;
+        }
+
+        #gameOver {
+            display: none;
+            position: absolute;
+            color: white;
+            font-size: 36px;
+            text-align: center;
+            margin-top: -100px;
+        }
+
+        .mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+        }
+
+        .control-btn {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-controls {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <div id="gameOver">GAME OVER<br><button onclick="restartGame()" class="control-btn">Restart</button></div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="mobile-controls">
+        <button class="control-btn" onclick="changeDirection('up')">↑</button><br>
+        <button class="control-btn" onclick="changeDirection('left')">←</button>
+        <button class="control-btn" onclick="changeDirection('down')">↓</button>
+        <button class="control-btn" onclick="changeDirection('right')">→</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverDiv = document.getElementById('gameOver');
+        const scoreDiv = document.getElementById('score');
+
+        let gridSize = 20;
+        let tileCount = 20;
+        let snake = [{x: 10, y: 10}];
+        let direction = 'right';
+        let food = {x: 5, y: 5};
+        let balls = [];
+        let score = 0;
+        let gameLoop;
+        let lastTime = 0;
+        let speed = 7; // Lower is faster
+
+        function resizeCanvas() {
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+            canvas.width = size - (size % gridSize);
+            canvas.height = size - (size % gridSize);
+            tileCount = canvas.width / gridSize;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function spawnBall() {
+            const x = Math.floor(Math.random() * tileCount);
+            const y = Math.floor(Math.random() * tileCount);
+            const dx = Math.random() < 0.5 ? -1 : 1;
+            const dy = Math.random() < 0.5 ? -1 : 1;
+            
+            balls.push({
+                x: x,
+                y: y,
+                dx: dx,
+                dy: dy
+            });
+        }
+
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const delta = timestamp - lastTime;
+
+            if (delta > 1000 / speed) {
+                update();
+                lastTime = timestamp;
+            }
+            
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            const head = {x: snake[0].x, y: snake[0].y};
+
+            // Move snake
+            switch(direction) {
+                case 'up': head.y--; break;
+                case 'down': head.y++; break;
+                case 'left': head.x--; break;
+                case 'right': head.x++; break;
+            }
+
+            // Check wall collision
+            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+                return endGame();
+            }
+
+            // Check self collision
+            if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+                return endGame();
+            }
+
+            snake.unshift(head);
+
+            // Check food collision
+            if (head.x === food.x && head.y === food.y) {
+                score++;
+                scoreDiv.textContent = `Score: ${score}`;
+                placeFood();
+            } else {
+                snake.pop();
+            }
+
+            // Update balls
+            balls.forEach(ball => {
+                ball.x += ball.dx;
+                ball.y += ball.dy;
+
+                // Bounce off walls
+                if (ball.x <= 0 || ball.x >= tileCount - 1) ball.dx *= -1;
+                if (ball.y <= 0 || ball.y >= tileCount - 1) ball.dy *= -1;
+
+                // Check collision with snake head
+                if (Math.abs(ball.x - head.x) < 1 && Math.abs(ball.y - head.y) < 1) {
+                    endGame();
+                }
+            });
+        }
+
+        function draw() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw snake
+            ctx.fillStyle = 'lime';
+            snake.forEach(segment => ctx.fillRect(
+                segment.x * gridSize,
+                segment.y * gridSize,
+                gridSize - 2,
+                gridSize - 2
+            ));
+
+            // Draw food
+            ctx.fillStyle = 'red';
+            ctx.fillRect(
+                food.x * gridSize,
+                food.y * gridSize,
+                gridSize - 2,
+                gridSize - 2
+            );
+
+            // Draw balls
+            ctx.fillStyle = 'blue';
+            balls.forEach(ball => ctx.fillRect(
+                ball.x * gridSize,
+                ball.y * gridSize,
+                gridSize - 2,
+                gridSize - 2
+            ));
+        }
+
+        function placeFood() {
+            food.x = Math.floor(Math.random() * tileCount);
+            food.y = Math.floor(Math.random() * tileCount);
+            
+            // Ensure food doesn't spawn on snake
+            if (snake.some(segment => segment.x === food.x && segment.y === food.y)) {
+                placeFood();
+            }
+        }
+
+        function changeDirection(newDirection) {
+            const opposites = {
+                'up': 'down',
+                'down': 'up',
+                'left': 'right',
+                'right': 'left'
+            };
+            
+            if (newDirection !== opposites[direction]) {
+                direction = newDirection;
+            }
+        }
+
+        function endGame() {
+            clearInterval(ballInterval);
+            cancelAnimationFrame(gameLoop);
+            gameOverDiv.style.display = 'block';
+        }
+
+        function restartGame() {
+            snake = [{x: 10, y: 10}];
+            direction = 'right';
+            balls = [];
+            score = 0;
+            scoreDiv.textContent = 'Score: 0';
+            gameOverDiv.style.display = 'none';
+            placeFood();
+            ballInterval = setInterval(spawnBall, 5000);
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event listeners
+        window.addEventListener('keydown', e => {
+            switch(e.key) {
+                case 'ArrowUp': changeDirection('up'); break;
+                case 'ArrowDown': changeDirection('down'); break;
+                case 'ArrowLeft': changeDirection('left'); break;
+                case 'ArrowRight': changeDirection('right'); break;
+            }
+        });
+
+        // Start game
+        let ballInterval = setInterval(spawnBall, 5000);
+        placeFood();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

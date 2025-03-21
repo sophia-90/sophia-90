@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Shooter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background-color: #111;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+        }
+        .playerView {
+            flex: 1;
+            height: 100%;
+            position: relative;
+        }
+        /* Add a yellow border for player 2 view to create separation */
+        #player1View {
+            border-right: 2px solid yellow;
+        }
+        canvas {
+            image-rendering: pixelated;
+        }
+        .playerInfo {
+            position: absolute;
+            top: 10px;
+            color: white;
+            padding: 5px;
+            background-color: rgba(0,0,0,0.5);
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #player1Info {
+            left: 10px;
+        }
+        #player2Info {
+            right: 10px;
+        }
+        .upgradeOptions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .upgradeOption {
+            background-color: rgba(255,255,255,0.9);
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            width: 120px;
+        }
+        .keyHint {
+            font-weight: bold;
+            color: #d00;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 20;
+            display: none;
+        }
+        #waveInfo {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #restartButton {
+            background-color: #d00;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="playerView" id="player1View">
+            <div class="playerInfo" id="player1Info">Player 1: Health 100 | Level 1 | XP 0/100</div>
+            <canvas id="player1Canvas"></canvas>
+            <div class="upgradeOptions" id="player1Upgrades">
+                <div class="upgradeOption" data-option="0">
+                    <div class="keyHint">F</div>
+                    <div class="upgradeText"></div>
+                </div>
+                <div class="upgradeOption" data-option="1">
+                    <div class="keyHint">G</div>
+                    <div class="upgradeText"></div>
+                </div>
+                <div class="upgradeOption" data-option="2">
+                    <div class="keyHint">H</div>
+                    <div class="upgradeText"></div>
+                </div>
+            </div>
+        </div>
+        <div class="playerView" id="player2View">
+            <div class="playerInfo" id="player2Info">Player 2: Health 100 | Level 1 | XP 0/100</div>
+            <canvas id="player2Canvas"></canvas>
+            <div class="upgradeOptions" id="player2Upgrades">
+                <div class="upgradeOption" data-option="0">
+                    <div class="keyHint">J</div>
+                    <div class="upgradeText"></div>
+                </div>
+                <div class="upgradeOption" data-option="1">
+                    <div class="keyHint">K</div>
+                    <div class="upgradeText"></div>
+                </div>
+                <div class="upgradeOption" data-option="2">
+                    <div class="keyHint">L</div>
+                    <div class="upgradeText"></div>
+                </div>
+            </div>
+        </div>
+        <div id="waveInfo">Wave 1 | Time to next wave: 30s</div>
+    </div>
+    <div id="gameOver">
+        <h2>Game Over</h2>
+        <p>Both players have been defeated!</p>
+        <p>Waves survived: <span id="wavesSurvived">0</span></p>
+        <button id="restartButton">Restart Game</button>
+    </div>
+
+    <script>
+        // Game Constants
+        const GRID_SIZE = 40; // Size of each grid cell in pixels
+        const GAME_WIDTH = 60; // Game width in grid cells
+        const GAME_HEIGHT = 40; // Game height in grid cells
+        const VIEW_SIZE = 15; // Size of player's view in grid cells
+        const ENEMY_SPAWN_INTERVAL = 30000; // 30 seconds
+
+        // Game state
+        let gameRunning = true;
+        let currentWave = 1;
+        let nextWaveTimer = ENEMY_SPAWN_INTERVAL;
+        let lastFrameTime = 0;
+        let keys = {};
+        let enemies = [];
+        let bullets = [];
+        let healthPotions = [];
+        let poisonAreas = [];
+        
+        // Initialize canvases
+        const player1Canvas = document.getElementById('player1Canvas');
+        const player2Canvas = document.getElementById('player2Canvas');
+        const ctx1 = player1Canvas.getContext('2d');
+        const ctx2 = player2Canvas.getContext('2d');
+        
+        // Player class
+        class Player {
+            constructor(id, x, y, color, controls) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.controls = controls;
+                this.radius = 0.4;
+                this.health = 100;
+                this.maxHealth = 100;
+                this.speed = 5;
+                this.attackPower = 10;
+                this.attackRange = 8;
+                this.attackSpeed = 2;
+                this.lastAttackTime = 0;
+                this.bulletsPerShot = 1;
+                this.level = 1;
+                this.xp = 0;
+                this.xpToNextLevel = 100;
+                this.isDead = false;
+                this.reviving = null;
+                this.reviveTimer = 0;
+                this.upgrades = [];
+            }
+            
+            move(deltaTime) {
+                if (this.isDead) return;
+                
+                let dx = 0;
+                let dy = 0;
+                
+                if (keys[this.controls.up]) dy -= 1;
+                if (keys[this.controls.down]) dy += 1;
+                if (keys[this.controls.left]) dx -= 1;
+                if (keys[this.controls.right]) dx += 1;
+                
+                // Normalize diagonal movement
+                if (dx !== 0 && dy !== 0) {
+                    const magnitude = Math.sqrt(dx * dx + dy * dy);
+                    dx /= magnitude;
+                    dy /= magnitude;
+                }
+                
+                // Apply movement with speed
+                const moveDistance = this.speed * deltaTime / 1000;
+                let newX = this.x + dx * moveDistance;
+                let newY = this.y + dy * moveDistance;
+                
+                // Boundary check
+                if (newX - this.radius > 0 && newX + this.radius < GAME_WIDTH) {
+                    this.x = newX;
+                }
+                if (newY - this.radius > 0 && newY + this.radius < GAME_HEIGHT) {
+                    this.y = newY;
+                }
+                
+                // Check for health potions
+                for (let i = healthPotions.length - 1; i >= 0; i--) {
+                    const potion = healthPotions[i];
+                    const distance = Math.sqrt(Math.pow(this.x - potion.x, 2) + Math.pow(this.y - potion.y, 2));
+                    
+                    if (distance < this.radius + potion.radius) {
+                        this.health = Math.min(this.maxHealth, this.health + 20);
+                        healthPotions.splice(i, 1);
+                        updatePlayerInfo();
+                    }
+                }
+                
+                // Check for poison damage
+                for (const area of poisonAreas) {
+                    if (this.x >= area.x - 1.5 && this.x <= area.x + 1.5 && 
+                        this.y >= area.y - 1.5 && this.y <= area.y + 1.5) {
+                        this.takeDamage(3 * deltaTime / 1000);
+                    }
+                }
+                
+                // Revive mechanic
+                const otherPlayer = this.id === 1 ? player2 : player1;
+                if (otherPlayer.isDead && !this.isDead) {
+                    const distance = Math.sqrt(Math.pow(this.x - otherPlayer.x, 2) + Math.pow(this.y - otherPlayer.y, 2));
+                    if (distance < this.radius + otherPlayer.radius + 0.5) {
+                        if (this.reviving === otherPlayer.id) {
+                            this.reviveTimer += deltaTime / 1000;
+                            if (this.reviveTimer >= 5) {
+                                otherPlayer.revive();
+                                this.reviving = null;
+                                this.reviveTimer = 0;
+                            }
+                        } else {
+                            this.reviving = otherPlayer.id;
+                            this.reviveTimer = 0;
+                        }
+                    } else if (this.reviving === otherPlayer.id) {
+                        this.reviving = null;
+                        this.reviveTimer = 0;
+                    }
+                }
+            }
+            
+            attack(currentTime) {
+                if (this.isDead) return;
+                
+                // Check if we can attack based on attack speed
+                if (currentTime - this.lastAttackTime < 1000 / this.attackSpeed) return;
+                
+                // Find nearest enemy within range
+                let nearestEnemy = null;
+                let nearestDistance = Infinity;
+                
+                for (const enemy of enemies) {
+                    const distance = Math.sqrt(Math.pow(this.x - enemy.x, 2) + Math.pow(this.y - enemy.y, 2));
+                    if (distance < this.attackRange && distance < nearestDistance) {
+                        nearestEnemy = enemy;
+                        nearestDistance = distance;
+                    }
+                }
+                
+                if (nearestEnemy) {
+                    this.lastAttackTime = currentTime;
+                    
+                    // Calculate direction to enemy
+                    const dx = nearestEnemy.x - this.x;
+                    const dy = nearestEnemy.y - this.y;
+                    const magnitude = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Create bullets based on bulletsPerShot
+                    for (let i = 0; i < this.bulletsPerShot; i++) {
+                        // Add slight variation for multiple bullets
+                        let angle = Math.atan2(dy, dx);
+                        if (this.bulletsPerShot > 1) {
+                            angle += (i / (this.bulletsPerShot - 1) - 0.5) * 0.5;
+                        }
+                        
+                        const bulletDx = Math.cos(angle);
+                        const bulletDy = Math.sin(angle);
+                        
+                        bullets.push({
+                            x: this.x,
+                            y: this.y,
+                            dx: bulletDx,
+                            dy: bulletDy,
+                            speed: 8,
+                            damage: this.attackPower,
+                            color: this.color,
+                            isPlayerBullet: true
+                        });
+                    }
+                }
+            }
+            
+            takeDamage(amount) {
+                if (this.isDead) return;
+                
+                this.health -= amount;
+                if (this.health <= 0) {
+                    this.health = 0;
+                    this.isDead = true;
+                    
+                    // Check if both players are dead
+                    if (player1.isDead && player2.isDead) {
+                        endGame();
+                    }
+                }
+                
+                updatePlayerInfo();
+            }
+            
+            revive() {
+                this.isDead = false;
+                this.health = this.maxHealth / 2;
+                updatePlayerInfo();
+            }
+            
+            gainXP(amount) {
+                if (this.isDead) return;
+                
+                this.xp += amount;
+                if (this.xp >= this.xpToNextLevel) {
+                    this.levelUp();
+                }
+                
+                updatePlayerInfo();
+            }
+            
+            levelUp() {
+                this.level++;
+                this.xp -= this.xpToNextLevel;
+                // Increase XP required for next level by 50%
+                this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.5);
+                
+                // Generate upgrade options
+                this.upgrades = generateUpgradeOptions();
+                
+                // Show upgrade UI
+                const upgradeElement = document.getElementById(`player${this.id}Upgrades`);
+                const options = upgradeElement.querySelectorAll('.upgradeOption .upgradeText');
+                
+                for (let i = 0; i < options.length; i++) {
+                    options[i].textContent = this.upgrades[i].description;
+                }
+                
+                upgradeElement.style.opacity = 1;
+                
+                updatePlayerInfo();
+            }
+            
+            applyUpgrade(index) {
+                const upgrade = this.upgrades[index];
+                
+                switch (upgrade.type) {
+                    case 'health':
+                        this.maxHealth *= 1.1;
+                        this.health = Math.min(this.health + this.maxHealth * 0.1, this.maxHealth);
+                        break;
+                    case 'attack':
+                        this.attackPower *= 1.1;
+                        break;
+                    case 'speed':
+                        this.speed *= 1.1;
+                        break;
+                    case 'range':
+                        this.attackRange *= 1.1;
+                        break;
+                    case 'bullets':
+                        this.bulletsPerShot += 1;
+                        break;
+                }
+                
+                this.upgrades = [];
+                const upgradeElement = document.getElementById(`player${this.id}Upgrades`);
+                upgradeElement.style.opacity = 0;
+                
+                updatePlayerInfo();
+            }
+            
+            render(ctx, offsetX, offsetY) {
+                // Draw player
+                ctx.beginPath();
+                ctx.fillStyle = this.isDead ? '#555' : this.color;
+                ctx.arc(
+                    (this.x - offsetX) * GRID_SIZE + GRID_SIZE / 2, 
+                    (this.y - offsetY) * GRID_SIZE + GRID_SIZE / 2, 
+                    this.radius * GRID_SIZE, 
+                    0, 
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Draw player weapon (black stick)
+                if (!this.isDead) {
+                    // Find nearest enemy for weapon direction
+                    let nearestEnemy = null;
+                    let nearestDistance = Infinity;
+                    
+                    for (const enemy of enemies) {
+                        const distance = Math.sqrt(Math.pow(this.x - enemy.x, 2) + Math.pow(this.y - enemy.y, 2));
+                        if (distance < nearestDistance) {
+                            nearestEnemy = enemy;
+                            nearestDistance = distance;
+                        }
+                    }
+                    
+                    // Draw weapon pointing toward nearest enemy or default right
+                    let angle = 0;
+                    if (nearestEnemy) {
+                        angle = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
+                    }
+                    
+                    const stickLength = this.radius * 1.2 * GRID_SIZE;
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 4;
+                    const centerX = (this.x - offsetX) * GRID_SIZE + GRID_SIZE / 2;
+                    const centerY = (this.y - offsetY) * GRID_SIZE + GRID_SIZE / 2;
+                    ctx.moveTo(centerX, centerY);
+                    ctx.lineTo(
+                        centerX + Math.cos(angle) * stickLength,
+                        centerY + Math.sin(angle) * stickLength
+                    );
+                    ctx.stroke();
+                }
+                
+                // Draw health bar
+                const healthBarWidth = GRID_SIZE;
+                const healthBarHeight = 6;
+                ctx.fillStyle = '#333';
+                ctx.fillRect(
+                    (this.x - offsetX) * GRID_SIZE + GRID_SIZE / 2 - healthBarWidth / 2,
+                    (this.y - offsetY) * GRID_SIZE + GRID_SIZE / 2 - this.radius * GRID_SIZE - 10,
+                    healthBarWidth,
+                    healthBarHeight
+                );
+                ctx.fillStyle = '#3f3';
+                ctx.fillRect(
+                    (this.x - offsetX) * GRID_SIZE + GRID_SIZE / 2 - healthBarWidth / 2,
+                    (this.y - offsetY) * GRID_SIZE + GRID_SIZE / 2 - this.radius * GRID_SIZE - 10,
+                    (this.health / this.maxHealth) * healthBarWidth,
+                    healthBarHeight
+                );
+                
+                // Draw revive progress if applicable
+                if (this.reviving !== null) {
+                    const reviveProgress = this.reviveTimer / 5;
+                    const otherPlayer = this.reviving === 1 ? player1 : player2;
+                    
+                    ctx.fillStyle = '#555';
+                    ctx.fillRect(
+                        (otherPlayer.x - offsetX) * GRID_SIZE + GRID_SIZE / 2 - healthBarWidth / 2,
+                        (otherPlayer.y - offsetY) * GRID_SIZE + GRID_SIZE / 2 - otherPlayer.radius * GRID_SIZE - 20,
+                        healthBarWidth,
+                        healthBarHeight
+                    );
+                    ctx.fillStyle = '#5ff';
+                    ctx.fillRect(
+                        (otherPlayer.x - offsetX) * GRID_SIZE + GRID_SIZE / 2 - healthBarWidth / 2,
+                        (otherPlayer.y - offsetY) * GRID_SIZE + GRID_SIZE / 2 - otherPlayer.radius * GRID_SIZE - 20,
+                        reviveProgress * healthBarWidth,
+                        healthBarHeight
+                    );
+                }
+            }
+        }
+        
+        // Enemy classes
+        class Enemy {
+            constructor(x, y, type, health) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.health = health;
+                this.maxHealth = health;
+                this.lastAttackTime = 0;
+                this.targetPlayer = null;
+                
+                // Properties based on enemy type
+                switch (type) {
+                    case 'melee':
+                        this.color = 'orange';
+                        this.weaponColor = 'brown';
+                        this.attackPower = 5;
+                        this.attackSpeed = 1;
+                        this.speed = 0.5;
+                        this.attackRange = 1;
+                        break;
+                    case 'gunner':
+                        this.color = 'purple';
+                        this.weaponColor = 'yellow';
+                        this.attackPower = 10;
+                        this.attackSpeed = 1.5;
+                        this.speed = 1;
+                        this.attackRange = 5;
+                        break;
+                    case 'poisoner':
+                        this.color = 'black';
+                        this.weaponColor = 'lime';
+                        this.attackPower = 3;
+                        this.attackSpeed = 0.5;
+                        this.speed = 1;
+                        this.attackRange = 3;
+                        break;
+                }
+            }
+            
+            update(deltaTime, currentTime) {
+                // Find nearest player
+                let player1Distance = player1.isDead ? Infinity : 
+                    Math.sqrt(Math.pow(this.x - player1.x, 2) + Math.pow(this.y - player1.y, 2));
+                let player2Distance = player2.isDead ? Infinity : 
+                    Math.sqrt(Math.pow(this.x - player2.x, 2) + Math.pow(this.y - player2.y, 2));
+                
+                this.targetPlayer = player1Distance <= player2Distance ? player1 : player2;
+                const targetDistance = Math.min(player1Distance, player2Distance);
+                
+                // If target is dead, find other player if available
+                if (this.targetPlayer.isDead) {
+                    this.targetPlayer = this.targetPlayer === player1 ? player2 : player1;
+                    if (this.targetPlayer.isDead) {
+                        // Both players dead, don't move or attack
+                        return;
+                    }
+                }
+                
+                // Move or attack based on distance
+                if (targetDistance > this.attackRange) {
+                    // Move toward target player
+                    const dx = this.targetPlayer.x - this.x;
+                    const dy = this.targetPlayer.y - this.y;
+                    const magnitude = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (magnitude > 0) {
+                        const moveDistance = this.speed * deltaTime / 1000;
+                        this.x += (dx / magnitude) * moveDistance;
+                        this.y += (dy / magnitude) * moveDistance;
+                    }
+                } else {
+                    // Attack if cooldown elapsed
+                    if (currentTime - this.lastAttackTime >= 1000 / this.attackSpeed) {
+                        this.attack(currentTime);
+                        this.lastAttackTime = currentTime;
+                    }
+                }
+            }
+            
+            attack(currentTime) {
+                if (!this.targetPlayer || this.targetPlayer.isDead) return;
+                
+                switch (this.type) {
+                    case 'melee':
+                        // Direct damage to player if still in range
+                        const meleeDistance = Math.sqrt(
+                            Math.pow(this.x - this.targetPlayer.x, 2) + 
+                            Math.pow(this.y - this.targetPlayer.y, 2)
+                        );
+                        if (meleeDistance <= this.attackRange) {
+                            this.targetPlayer.takeDamage(this.attackPower);
+                        }
+                        break;
+                        
+                    case 'gunner':
+                        // Fire a bullet at player
+                        const dx = this.targetPlayer.x - this.x;
+                        const dy = this.targetPlayer.y - this.y;
+                        const magnitude = Math.sqrt(dx * dx + dy * dy);
+                        
+                        bullets.push({
+                            x: this.x,
+                            y: this.y,
+                            dx: dx / magnitude,
+                            dy: dy / magnitude,
+                            speed: 1.5,
+                            damage: this.attackPower,
+                            color: this.weaponColor,
+                            isPlayerBullet: false
+                        });
+                        break;
+                        
+                    case 'poisoner':
+                        // Create poison area around target player
+                        poisonAreas.push({
+                            x: this.targetPlayer.x,
+                            y: this.targetPlayer.y,
+                            createTime: currentTime,
+                            duration: 10000, // 10 seconds
+                            color: 'rgba(0, 255, 0, 0.3)'
+                        });
+                        break;
+                }
+            }
+            
+            takeDamage(amount) {
+                this.health -= amount;
+                
+                // Check if enemy is defeated
+                if (this.health <= 0) {
+                    // Remove from enemies array (done in main update loop)
+                    return true;
+                }
+                return false;
+            }
+            
+            render(ctx, offsetX, offsetY) {
+                // Skip if enemy is outside visible area
+                if (this.x < offsetX - 1 || this.x > offsetX + VIEW_SIZE + 1 ||
+                    this.y < offsetY - 1 || this.y > offsetY + VIEW_SIZE + 1) {
+                    return;
+                }
+                
+                // Draw enemy
+                ctx.fillStyle = this.color;
+                ctx.fillRect(
+                    (this.x - offsetX) * GRID_SIZE - GRID_SIZE * 0.4,
+                    (this.y - offsetY) * GRID_SIZE - GRID_SIZE * 0.4,
+                    GRID_SIZE * 0.8,
+                    GRID_SIZE * 0.8
+                );
+                
+                // Draw enemy weapon
+                const angle = this.targetPlayer ? 
+                    Math.atan2(this.targetPlayer.y - this.y, this.targetPlayer.x - this.x) : 0;
+                    
+                const stickLength = GRID_SIZE * 0.6;
+                ctx.beginPath();
+                ctx.strokeStyle = this.weaponColor;
+                ctx.lineWidth = 4;
+                const centerX = (this.x - offsetX) * GRID_SIZE;
+                const centerY = (this.y - offsetY) * GRID_SIZE;
+                ctx.moveTo(centerX, centerY);
+                ctx.lineTo(
+                    centerX + Math.cos(angle) * stickLength,
+                    centerY + Math.sin(angle) * stickLength
+                );
+                ctx.stroke();
+                
+                if (this.type === 'poisoner') {
+                    // Draw bottle shape for poisoner
+                    ctx.beginPath();
+                    ctx.fillStyle = this.weaponColor;
+                    ctx.ellipse(
+                        centerX + Math.cos(angle) * stickLength,
+                        centerY + Math.sin(angle) * stickLength,
+                        GRID_SIZE * 0.2,
+                        GRID_SIZE * 0.3,
+                        angle,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                
+                // Draw health bar
+                const healthBarWidth = GRID_SIZE * 0.8;
+                const healthBarHeight = 4;
+                ctx.fillStyle = '#333';
+                ctx.fillRect(
+                    (this.x - offsetX) * GRID_SIZE - GRID_SIZE * 0.4,
+                    (this.y - offsetY) * GRID_SIZE - GRID_SIZE * 0.6,
+                    healthBarWidth,
+                    healthBarHeight
+                );
+                ctx.fillStyle = '#f33';
+                ctx.fillRect(
+                    (this.x - offsetX) * GRID_SIZE - GRID_SIZE * 0.4,
+                    (this.y - offsetY) * GRID_SIZE - GRID_SIZE * 0.6,
+                    (this.health / this.maxHealth) * healthBarWidth,
+                    healthBarHeight
+                );
+            }
+        }
+        
+        // Player instances
+        const player1 = new Player(1, GAME_WIDTH / 3, GAME_HEIGHT / 2, '#f00', {
+            up: 'KeyW',
+            down: 'KeyS',
+            left: 'KeyA',
+            right: 'KeyD',
+            upgradeKeys: ['KeyF', 'KeyG', 'KeyH']
+        });
+        
+        const player2 = new Player(2, GAME_WIDTH * 2/3, GAME_HEIGHT / 2, '#00f', {
+            up: 'ArrowUp',
+            down: 'ArrowDown',
+            left: 'ArrowLeft',
+            right: 'ArrowRight',
+            upgradeKeys: ['KeyJ', 'KeyK', 'KeyL']
+        });
+        
+        // Helper functions
+        function generateUpgradeOptions() {
+            const options = [
+                { type: 'health', description: 'Health +10%' },
+                { type: 'attack', description: 'Attack Power +10%' },
+                { type: 'speed', description: 'Movement Speed +10%' },
+                { type: 'range', description: 'Attack Range +10%' },
+                { type: 'bullets', description: '+1 Bullet per Shot' }
+            ];
+            
+            // Shuffle options and pick 3
+            for (let i = options.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [options[i], options[j]] = [options[j], options[i]];
+            }
+            
+            return options.slice(0, 3);
+        }
+        
+        function spawnEnemies() {
+            const enemyCount = currentWave * 10;
+            const enemyHealth = currentWave * 5;
+            const enemyTypes = ['melee', 'gunner', 'poisoner'];
+            
+            for (let i = 0; i < enemyCount; i++) {
+                // Determine spawn position (at game boundaries)
+                let x, y;
+                const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+                
+                switch (side) {
+                    case 0: // Top
+                        x = Math.random() * GAME_WIDTH;
+                        y = 0.5;
+                        break;
+                    case 1: // Right
+                        x = GAME_WIDTH - 0.5;
+                        y = Math.random() * GAME_HEIGHT;
+                        break;
+                    case 2: // Bottom
+                        x = Math.random() * GAME_WIDTH;
+                        y = GAME_HEIGHT - 0.5;
+                        break;
+                    case 3: // Left
+                        x = 0.5;
+                        y = Math.random() * GAME_HEIGHT;
+                        break;
+                }
+                
+                // Select random enemy type
+                const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                enemies.push(new Enemy(x, y, type, enemyHealth));
+            }
+            
+            currentWave++;
+            nextWaveTimer = ENEMY_SPAWN_INTERVAL;
+            updateWaveInfo();
+        }
+        
+        function updateBullets(deltaTime) {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                
+                // Move bullet
+                bullet.x += bullet.dx * bullet.speed * deltaTime / 1000;
+                bullet.y += bullet.dy * bullet.speed * deltaTime / 1000;
+                
+                // Remove bullets that go out of bounds
+                if (bullet.x < 0 || bullet.x > GAME_WIDTH || bullet.y < 0 || bullet.y > GAME_HEIGHT) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Collision detection with players or enemies
+                if (bullet.isPlayerBullet) {
+                    // Player bullets hit enemies
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        const enemy = enemies[j];
+                        const distance = Math.sqrt(
+                            Math.pow(bullet.x - enemy.x, 2) + 
+                            Math.pow(bullet.y - enemy.y, 2)
+                        );
+                        
+                        if (distance < 0.5) {
+                            // Hit enemy
+                            const defeated = enemy.takeDamage(bullet.damage);
+                            
+                            if (defeated) {
+                                // Give XP to player who fired the bullet
+                                const scorer = bullet.color === player1.color ? player1 : player2;
+                                scorer.gainXP(10);
+                                
+                                // 5% chance to drop health potion
+                                if (Math.random() < 0.05) {
+                                    healthPotions.push({
+                                        x: enemy.x,
+                                        y: enemy.y,
+                                        radius: 0.3,
+                                        color: '#f66'
+                                    });
+                                }
+                                
+                                enemies.splice(j, 1);
+                            }
+                            
+                            bullets.splice(i, 1);
+                            break;
+                        }
+                    }
+                } else {
+                    // Enemy bullets hit players
+                    for (const player of [player1, player2]) {
+                        if (player.isDead) continue;
+                        
+                        const distance = Math.sqrt(
+                            Math.pow(bullet.x - player.x, 2) + 
+                            Math.pow(bullet.y - player.y, 2)
+                        );
+                        
+                        if (distance < player.radius) {
+                            // Hit player
+                            player.takeDamage(bullet.damage);
+                            bullets.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        function updatePoisonAreas(currentTime) {
+            for (let i = poisonAreas.length - 1; i >= 0; i--) {
+                const area = poisonAreas[i];
+                
+                // Remove expired poison areas
+                if (currentTime - area.createTime >= area.duration) {
+                    poisonAreas.splice(i, 1);
+                }
+            }
+        }
+        
+        function updatePlayerInfo() {
+            document.getElementById('player1Info').textContent = 
+                `Player 1: Health ${Math.floor(player1.health)}/${Math.floor(player1.maxHealth)} | Level ${player1.level} | XP ${player1.xp}/${player1.xpToNextLevel}` +
+                (player1.isDead ? ' | DEAD' : '');
+            
+            document.getElementById('player2Info').textContent = 
+                `Player 2: Health ${Math.floor(player2.health)}/${Math.floor(player2.maxHealth)} | Level ${player2.level} | XP ${player2.xp}/${player2.xpToNextLevel}` +
+                (player2.isDead ? ' | DEAD' : '');
+        }
+        
+        function updateWaveInfo() {
+            document.getElementById('waveInfo').textContent = 
+                `Wave ${currentWave} | Time to next wave: ${Math.ceil(nextWaveTimer / 1000)}s`;
+        }
+        
+        function endGame() {
+            gameRunning = false;
+            document.getElementById('gameOver').style.display = 'block';
+            document.getElementById('wavesSurvived').textContent = currentWave - 1;
+        }
+        
+        function resizeCanvases() {
+            const resizing = () => {
+                const container1 = document.getElementById('player1View');
+                const container2 = document.getElementById('player2View');
+                
+                player1Canvas.width = container1.clientWidth;
+                player1Canvas.height = container1.clientHeight;
+                player2Canvas.width = container2.clientWidth;
+                player2Canvas.height = container2.clientHeight;
+            };
+            
+            resizing();
+            // Wait a bit to ensure correct sizing
+            setTimeout(resizing, 100);
+        }
+        
+        function renderGame() {
+            // Clear canvases
+            ctx1.clearRect(0, 0, player1Canvas.width, player1Canvas.height);
+            ctx2.clearRect(0, 0, player2Canvas.width, player2Canvas.height);
+            
+            // Calculate player view offsets
+            const player1OffsetX = Math.max(0, Math.min(GAME_WIDTH - VIEW_SIZE, player1.x - VIEW_SIZE / 2));
+            const player1OffsetY = Math.max(0, Math.min(GAME_HEIGHT - VIEW_SIZE, player1.y - VIEW_SIZE / 2));
+            const player2OffsetX = Math.max(0, Math.min(GAME_WIDTH - VIEW_SIZE, player2.x - VIEW_SIZE / 2));
+            const player2OffsetY = Math.max(0, Math.min(GAME_HEIGHT - VIEW_SIZE, player2.y - VIEW_SIZE / 2));
+            
+            // Draw game background
+            ctx1.fillStyle = '#222';
+            ctx2.fillStyle = '#222';
+            ctx1.fillRect(0, 0, player1Canvas.width, player1Canvas.height);
+            ctx2.fillRect(0, 0, player2Canvas.width, player2Canvas.height);
+            
+            // Draw fixed world grid (rather than viewport-relative grid)
+            // This makes the grid move with the player, showing relative position
+            ctx1.strokeStyle = '#333';
+            ctx2.strokeStyle = '#333';
+            ctx1.lineWidth = 1;
+            ctx2.lineWidth = 1;
+            
+            // Draw vertical grid lines (fixed to world)
+            for (let x = 0; x <= GAME_WIDTH; x++) {
+                const screenX1 = (x - player1OffsetX) * GRID_SIZE;
+                const screenX2 = (x - player2OffsetX) * GRID_SIZE;
+                
+                // Only draw if in visible area
+                if (screenX1 >= -GRID_SIZE && screenX1 <= player1Canvas.width + GRID_SIZE) {
+                    ctx1.beginPath();
+                    ctx1.moveTo(screenX1, 0);
+                    ctx1.lineTo(screenX1, player1Canvas.height);
+                    ctx1.stroke();
+                }
+                
+                if (screenX2 >= -GRID_SIZE && screenX2 <= player2Canvas.width + GRID_SIZE) {
+                    ctx2.beginPath();
+                    ctx2.moveTo(screenX2, 0);
+                    ctx2.lineTo(screenX2, player2Canvas.height);
+                    ctx2.stroke();
+                }
+            }
+            
+            // Draw horizontal grid lines (fixed to world)
+            for (let y = 0; y <= GAME_HEIGHT; y++) {
+                const screenY1 = (y - player1OffsetY) * GRID_SIZE;
+                const screenY2 = (y - player2OffsetY) * GRID_SIZE;
+                
+                // Only draw if in visible area
+                if (screenY1 >= -GRID_SIZE && screenY1 <= player1Canvas.height + GRID_SIZE) {
+                    ctx1.beginPath();
+                    ctx1.moveTo(0, screenY1);
+                    ctx1.lineTo(player1Canvas.width, screenY1);
+                    ctx1.stroke();
+                }
+                
+                if (screenY2 >= -GRID_SIZE && screenY2 <= player2Canvas.height + GRID_SIZE) {
+                    ctx2.beginPath();
+                    ctx2.moveTo(0, screenY2);
+                    ctx2.lineTo(player2Canvas.width, screenY2);
+                    ctx2.stroke();
+                }
+            }
+            
+            // Draw game boundaries
+            ctx1.strokeStyle = '#f00';
+            ctx2.strokeStyle = '#f00';
+            ctx1.lineWidth = 3;
+            ctx2.lineWidth = 3;
+            
+            // Top boundary
+            if (player1OffsetY < 1) {
+                ctx1.beginPath();
+                ctx1.moveTo(0, (0 - player1OffsetY) * GRID_SIZE);
+                ctx1.lineTo(player1Canvas.width, (0 - player1OffsetY) * GRID_SIZE);
+                ctx1.stroke();
+            }
+            if (player2OffsetY < 1) {
+                ctx2.beginPath();
+                ctx2.moveTo(0, (0 - player2OffsetY) * GRID_SIZE);
+                ctx2.lineTo(player2Canvas.width, (0 - player2OffsetY) * GRID_SIZE);
+                ctx2.stroke();
+            }
+            
+            // Bottom boundary
+            if (player1OffsetY > GAME_HEIGHT - VIEW_SIZE - 1) {
+                ctx1.beginPath();
+                ctx1.moveTo(0, (GAME_HEIGHT - player1OffsetY) * GRID_SIZE);
+                ctx1.lineTo(player1Canvas.width, (GAME_HEIGHT - player1OffsetY) * GRID_SIZE);
+                ctx1.stroke();
+            }
+            if (player2OffsetY > GAME_HEIGHT - VIEW_SIZE - 1) {
+                ctx2.beginPath();
+                ctx2.moveTo(0, (GAME_HEIGHT - player2OffsetY) * GRID_SIZE);
+                ctx2.lineTo(player2Canvas.width, (GAME_HEIGHT - player2OffsetY) * GRID_SIZE);
+                ctx2.stroke();
+            }
+            
+            // Left boundary
+            if (player1OffsetX < 1) {
+                ctx1.beginPath();
+                ctx1.moveTo((0 - player1OffsetX) * GRID_SIZE, 0);
+                ctx1.lineTo((0 - player1OffsetX) * GRID_SIZE, player1Canvas.height);
+                ctx1.stroke();
+            }
+            if (player2OffsetX < 1) {
+                ctx2.beginPath();
+                ctx2.moveTo((0 - player2OffsetX) * GRID_SIZE, 0);
+                ctx2.lineTo((0 - player2OffsetX) * GRID_SIZE, player2Canvas.height);
+                ctx2.stroke();
+            }
+            
+            // Right boundary
+            if (player1OffsetX > GAME_WIDTH - VIEW_SIZE - 1) {
+                ctx1.beginPath();
+                ctx1.moveTo((GAME_WIDTH - player1OffsetX) * GRID_SIZE, 0);
+                ctx1.lineTo((GAME_WIDTH - player1OffsetX) * GRID_SIZE, player1Canvas.height);
+                ctx1.stroke();
+            }
+            if (player2OffsetX > GAME_WIDTH - VIEW_SIZE - 1) {
+                ctx2.beginPath();
+                ctx2.moveTo((GAME_WIDTH - player2OffsetX) * GRID_SIZE, 0);
+                ctx2.lineTo((GAME_WIDTH - player2OffsetX) * GRID_SIZE, player2Canvas.height);
+                ctx2.stroke();
+            }
+            
+            // Draw poison areas
+            for (const area of poisonAreas) {
+                ctx1.fillStyle = area.color;
+                ctx1.fillRect(
+                    (area.x - 1.5 - player1OffsetX) * GRID_SIZE,
+                    (area.y - 1.5 - player1OffsetY) * GRID_SIZE,
+                    3 * GRID_SIZE,
+                    3 * GRID_SIZE
+                );
+                
+                ctx2.fillStyle = area.color;
+                ctx2.fillRect(
+                    (area.x - 1.5 - player2OffsetX) * GRID_SIZE,
+                    (area.y - 1.5 - player2OffsetY) * GRID_SIZE,
+                    3 * GRID_SIZE,
+                    3 * GRID_SIZE
+                );
+            }
+            
+            // Draw health potions
+            for (const potion of healthPotions) {
+                // For player 1 view
+                ctx1.beginPath();
+                ctx1.fillStyle = potion.color;
+                ctx1.arc(
+                    (potion.x - player1OffsetX) * GRID_SIZE,
+                    (potion.y - player1OffsetY) * GRID_SIZE,
+                    potion.radius * GRID_SIZE,
+                    0,
+                    Math.PI * 2
+                );
+                ctx1.fill();
+                
+                // For player 2 view
+                ctx2.beginPath();
+                ctx2.fillStyle = potion.color;
+                ctx2.arc(
+                    (potion.x - player2OffsetX) * GRID_SIZE,
+                    (potion.y - player2OffsetY) * GRID_SIZE,
+                    potion.radius * GRID_SIZE,
+                    0,
+                    Math.PI * 2
+                );
+                ctx2.fill();
+            }
+            
+            // Draw bullets
+            for (const bullet of bullets) {
+                // For player 1 view
+                ctx1.beginPath();
+                ctx1.fillStyle = bullet.color;
+                ctx1.arc(
+                    (bullet.x - player1OffsetX) * GRID_SIZE,
+                    (bullet.y - player1OffsetY) * GRID_SIZE,
+                    GRID_SIZE / 6,
+                    0,
+                    Math.PI * 2
+                );
+                ctx1.fill();
+                
+                // For player 2 view
+                ctx2.beginPath();
+                ctx2.fillStyle = bullet.color;
+                ctx2.arc(
+                    (bullet.x - player2OffsetX) * GRID_SIZE,
+                    (bullet.y - player2OffsetY) * GRID_SIZE,
+                    GRID_SIZE / 6,
+                    0,
+                    Math.PI * 2
+                );
+                ctx2.fill();
+            }
+            
+            // Draw enemies
+            for (const enemy of enemies) {
+                enemy.render(ctx1, player1OffsetX, player1OffsetY);
+                enemy.render(ctx2, player2OffsetX, player2OffsetY);
+            }
+            
+            // Draw players
+            player1.render(ctx1, player1OffsetX, player1OffsetY);
+            player2.render(ctx1, player1OffsetX, player1OffsetY);
+            player1.render(ctx2, player2OffsetX, player2OffsetY);
+            player2.render(ctx2, player2OffsetX, player2OffsetY);
+        }
+        
+        function gameLoop(currentTime) {
+            if (!lastFrameTime) {
+                lastFrameTime = currentTime;
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            const deltaTime = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+            
+            if (gameRunning) {
+                // Update wave timer
+                nextWaveTimer -= deltaTime;
+                if (nextWaveTimer <= 0) {
+                    spawnEnemies();
+                }
+                
+                // Update players
+                player1.move(deltaTime);
+                player2.move(deltaTime);
+                player1.attack(currentTime);
+                player2.attack(currentTime);
+                
+                // Update enemies
+                for (const enemy of enemies) {
+                    enemy.update(deltaTime, currentTime);
+                }
+                
+                // Update bullets
+                updateBullets(deltaTime);
+                
+                // Update poison areas
+                updatePoisonAreas(currentTime);
+                
+                // Update UI
+                updateWaveInfo();
+                
+                // Render game
+                renderGame();
+                
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Initialize game
+        function initGame() {
+            gameRunning = true;
+            currentWave = 1;
+            nextWaveTimer = ENEMY_SPAWN_INTERVAL;
+            lastFrameTime = 0;
+            enemies = [];
+            bullets = [];
+            healthPotions = [];
+            poisonAreas = [];
+            
+            // Reset players
+            player1.x = GAME_WIDTH / 3;
+            player1.y = GAME_HEIGHT / 2;
+            player1.health = 100;
+            player1.maxHealth = 100;
+            player1.speed = 1.5;
+            player1.attackPower = 5;
+            player1.attackRange = 8;
+            player1.attackSpeed = 2;
+            player1.bulletsPerShot = 1;
+            player1.level = 1;
+            player1.xp = 0;
+            player1.xpToNextLevel = 100;
+            player1.isDead = false;
+            
+            player2.x = GAME_WIDTH * 2/3;
+            player2.y = GAME_HEIGHT / 2;
+            player2.health = 100;
+            player2.maxHealth = 100;
+            player2.speed = 1.5;
+            player2.attackPower = 5;
+            player2.attackRange = 8;
+            player2.attackSpeed = 2;
+            player2.bulletsPerShot = 1;
+            player2.level = 1;
+            player2.xp = 0;
+            player2.xpToNextLevel = 100;
+            player2.isDead = false;
+            
+            document.getElementById('gameOver').style.display = 'none';
+            updatePlayerInfo();
+            updateWaveInfo();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Event listeners
+        window.addEventListener('keydown', function(e) {
+            // Store the key state
+            keys[e.code] = true;
+            
+            // Prevent default behavior for game control keys to avoid browser scrolling
+            const gameKeys = [
+                'KeyW', 'KeyA', 'KeyS', 'KeyD', 
+                'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'
+            ];
+            
+            if (gameKeys.includes(e.code)) {
+                e.preventDefault();
+            }
+            
+            // Check for upgrade selections
+            if (gameRunning) {
+                // Player 1 upgrade keys
+                if (player1.upgrades.length > 0) {
+                    if (e.code === 'KeyF') player1.applyUpgrade(0);
+                    else if (e.code === 'KeyG') player1.applyUpgrade(1);
+                    else if (e.code === 'KeyH') player1.applyUpgrade(2);
+                }
+                
+                // Player 2 upgrade keys
+                if (player2.upgrades.length > 0) {
+                    if (e.code === 'KeyJ') player2.applyUpgrade(0);
+                    else if (e.code === 'KeyK') player2.applyUpgrade(1);
+                    else if (e.code === 'KeyL') player2.applyUpgrade(2);
+                }
+            }
+        });
+        
+        window.addEventListener('keyup', function(e) {
+            // Release the key state
+            keys[e.code] = false;
+        });
+        
+        window.addEventListener('resize', resizeCanvases);
+        
+        document.getElementById('restartButton').addEventListener('click', initGame);
+        
+        // Initialize game
+        resizeCanvases();
+        initGame();
+    </script>
+</body>
+</html>

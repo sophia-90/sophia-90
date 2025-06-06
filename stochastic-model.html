@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hasselmann (1967) 随机气候模型</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE'
+                    }
+                }
+            },
+            darkMode: 'class'
+        }
+    </script>
+</head>
+<body class="bg-white dark:bg-gray-900 transition-colors duration-300">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- 标题 -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                Hasselmann (1967) 随机气候模型
+            </h1>
+            <p class="text-gray-600 dark:text-gray-400">
+                模拟方程: dT/dt = -λT + η(t)
+            </p>
+        </div>
+
+        <!-- 参数控制面板 -->
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">模型参数</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- 负反馈系数 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        负反馈系数 λ
+                    </label>
+                    <input type="range" id="lambda" min="0" max="1.0" step="0.01" value="0.1" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        值: <span id="lambdaValue">0.1</span>
+                    </div>
+                </div>
+
+                <!-- 噪声强度 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        噪声强度 σ
+                    </label>
+                    <input type="range" id="sigma" min="0" max="5.0" step="0.1" value="1.0" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        值: <span id="sigmaValue">1.0</span>
+                    </div>
+                </div>
+
+                <!-- 噪声类型 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        噪声类型
+                    </label>
+                    <select id="noiseType" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white text-base">
+                        <option value="white">白噪声</option>
+                        <option value="red">红噪声 (AR1)</option>
+                        <option value="pink">粉红噪声</option>
+                    </select>
+                </div>
+
+                <!-- 红噪声系数 -->
+                <div id="redNoiseDiv" style="display: none;">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        红噪声系数 α
+                    </label>
+                    <input type="range" id="redNoiseAlpha" min="0.1" max="0.95" step="0.05" value="0.7" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        值: <span id="redNoiseAlphaValue">0.7</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                <!-- 模拟时间 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        模拟时间 (年)
+                    </label>
+                    <input type="range" id="totalTime" min="50" max="1000" step="50" value="500" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        值: <span id="totalTimeValue">500</span> 年
+                    </div>
+                </div>
+
+                <!-- 时间步长 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        时间步长 (年)
+                    </label>
+                    <input type="range" id="dt" min="0.01" max="1.0" step="0.01" value="0.1" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        值: <span id="dtValue">0.1</span> 年
+                    </div>
+                </div>
+
+                <!-- 运行按钮 -->
+                <div class="flex items-end">
+                    <button id="runModel" 
+                            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-4 rounded-lg transition-colors">
+                        运行模型
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果显示区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- 时间序列图 -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">SST异常时间序列</h3>
+                <div style="height: 300px;">
+                    <canvas id="timeSeriesChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 功率谱密度 -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">功率谱密度</h3>
+                <div style="height: 300px;">
+                    <canvas id="powerSpectrumChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 自相关函数 -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">自相关函数</h3>
+                <div style="height: 300px;">
+                    <canvas id="autocorrChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">统计特征</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">平均值:</span>
+                        <span class="font-medium text-gray-900 dark:text-white" id="meanValue">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">标准差:</span>
+                        <span class="font-medium text-gray-900 dark:text-white" id="stdValue">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">方差:</span>
+                        <span class="font-medium text-gray-900 dark:text-white" id="varValue">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">e-folding时间:</span>
+                        <span class="font-medium text-gray-900 dark:text-white" id="efoldingTime">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">lag-1自相关:</span>
+                        <span class="font-medium text-gray-900 dark:text-white" id="lag1Corr">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模型说明 -->
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mt-8">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">模型说明</h3>
+            <div class="text-sm text-gray-700 dark:text-gray-300 space-y-2">
+                <p><strong>Hasselmann (1967) 随机气候模型:</strong></p>
+                <p>• 基本方程: dT/dt = -λT + η(t)</p>
+                <p>• λ: 负反馈系数，控制系统的阻尼和记忆时间</p>
+                <p>• η(t): 随机强迫，代表大气湍流等随机过程</p>
+                <p>• e-folding时间 = 1/λ，表示系统的特征时间尺度</p>
+                <p>• 该模型解释了海洋如何将大气的高频噪声转换为低频气候变化</p>
+                
+                <p class="mt-4"><strong>特殊情况:</strong></p>
+                <p>• λ = 0 (无负反馈): 系统变为随机游走，温度异常无限累积，无稳定状态</p>
+                <p>• σ = 0 (无噪声): 系统为纯衰减过程，温度异常指数衰减至零，T(t) = T₀·e<sup>-λt</sup></p>
+                <p>• 在无噪声情况下，系统会从初始扰动状态逐渐恢复到平衡状态，这是负反馈的物理作用</p>
+                <p>• 在现实气候系统中，负反馈代表系统的恢复力（如辐射冷却），噪声代表外部扰动（如天气系统）</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 主题设置
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+
+        // 图表变量
+        let timeSeriesChart, powerSpectrumChart, autocorrChart;
+
+        // 参数元素
+        const lambdaSlider = document.getElementById('lambda');
+        const sigmaSlider = document.getElementById('sigma');
+        const noiseTypeSelect = document.getElementById('noiseType');
+        const redNoiseAlphaSlider = document.getElementById('redNoiseAlpha');
+        const totalTimeSlider = document.getElementById('totalTime');
+        const dtSlider = document.getElementById('dt');
+        const runButton = document.getElementById('runModel');
+
+        // 值显示元素
+        const lambdaValue = document.getElementById('lambdaValue');
+        const sigmaValue = document.getElementById('sigmaValue');
+        const redNoiseAlphaValue = document.getElementById('redNoiseAlphaValue');
+        const totalTimeValue = document.getElementById('totalTimeValue');
+        const dtValue = document.getElementById('dtValue');
+        const redNoiseDiv = document.getElementById('redNoiseDiv');
+
+        // 统计显示元素
+        const meanValueSpan = document.getElementById('meanValue');
+        const stdValueSpan = document.getElementById('stdValue');
+        const varValueSpan = document.getElementById('varValue');
+        const efoldingTimeSpan = document.getElementById('efoldingTime');
+        const lag1CorrSpan = document.getElementById('lag1Corr');
+
+        // 事件监听器
+        lambdaSlider.addEventListener('input', () => lambdaValue.textContent = lambdaSlider.value);
+        sigmaSlider.addEventListener('input', () => sigmaValue.textContent = sigmaSlider.value);
+        redNoiseAlphaSlider.addEventListener('input', () => redNoiseAlphaValue.textContent = redNoiseAlphaSlider.value);
+        totalTimeSlider.addEventListener('input', () => totalTimeValue.textContent = totalTimeSlider.value);
+        dtSlider.addEventListener('input', () => dtValue.textContent = dtSlider.value);
+
+        noiseTypeSelect.addEventListener('change', () => {
+            if (noiseTypeSelect.value === 'red') {
+                redNoiseDiv.style.display = 'block';
+            } else {
+                redNoiseDiv.style.display = 'none';
+            }
+        });
+
+        runButton.addEventListener('click', runModel);
+
+        // 随机数生成器
+        function gaussianRandom() {
+            let u1 = Math.random();
+            let u2 = Math.random();
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        }
+
+        // 生成不同类型的噪声
+        function generateNoise(type, length, sigma, alpha = 0.7) {
+            let noise = new Array(length);
+            
+            // 如果噪声强度为0，返回全0数组
+            if (sigma === 0) {
+                return noise.fill(0);
+            }
+            
+            if (type === 'white') {
+                for (let i = 0; i < length; i++) {
+                    noise[i] = sigma * gaussianRandom();
+                }
+            } else if (type === 'red') {
+                noise[0] = sigma * gaussianRandom();
+                for (let i = 1; i < length; i++) {
+                    noise[i] = alpha * noise[i-1] + sigma * Math.sqrt(1 - alpha*alpha) * gaussianRandom();
+                }
+            } else if (type === 'pink') {
+                // 简化的粉红噪声生成
+                for (let i = 0; i < length; i++) {
+                    noise[i] = sigma * gaussianRandom();
+                }
+                // 应用低通滤波器近似粉红噪声
+                for (let i = 1; i < length; i++) {
+                    noise[i] = 0.7 * noise[i-1] + 0.3 * noise[i];
+                }
+            }
+            
+            return noise;
+        }
+
+        // Hasselmann模型数值积分
+        function integrateHasselmannModel(lambda, noise, dt) {
+            const n = noise.length;
+            let T = new Array(n);
+            
+            // 设置初始条件：为了在无噪声情况下观察到衰减过程，给一个非零初始值
+            T[0] = 1.0; // 初始温度异常设为1°C
+            
+            // 处理特殊情况：lambda为0时，模型变为纯积分过程
+            if (lambda === 0) {
+                // 当lambda=0时，dT/dt = η(t)，即温度变化率等于噪声
+                // 积分后，T(t) = T(0) + ∫η(τ)dτ，即温度是噪声的累积
+                for (let i = 1; i < n; i++) {
+                    T[i] = T[i-1] + dt * noise[i];
+                }
+            } else {
+                // 正常情况：欧拉方法积分
+                for (let i = 1; i < n; i++) {
+                    // 欧拉方法: T[i+1] = T[i] + dt * (-lambda * T[i] + noise[i])
+                    T[i] = T[i-1] + dt * (-lambda * T[i-1] + noise[i]);
+                }
+            }
+            
+            return T;
+        }
+
+        // 计算功率谱密度 (简化FFT)
+        function computePowerSpectrum(data, dt) {
+            const n = data.length;
+            const fft = new Array(n);
+            
+            // 检查数据是否全为常数（例如无噪声情况下）
+            const isConstant = data.every(val => val === data[0]);
+            const allZero = data.every(val => val === 0);
+            
+            // 如果数据全为常数或全为零，创建一个特殊的功率谱
+            if (isConstant) {
+                const frequencies = new Array(Math.floor(n/2) - 1).fill(0);
+                for (let i = 0; i < frequencies.length; i++) {
+                    frequencies[i] = (i + 1) / (n * dt);
+                }
+                
+                // 对于常数信号，只有零频率有能量，其他频率为0
+                // 但为了在图表上显示，我们设置一个很小的值
+                const power = new Array(frequencies.length).fill(1e-6);
+                
+                // 如果是纯衰减过程，我们仍然需要参考线
+                const variance = allZero ? 0.01 : data.reduce((acc, val) => acc + val * val, 0) / n;
+                const whiteNoise = new Array(frequencies.length).fill(variance);
+                const redNoise = new Array(frequencies.length);
+                
+                for (let i = 0; i < redNoise.length; i++) {
+                    const freq = frequencies[i];
+                    redNoise[i] = variance * 10 / (freq * freq);
+                }
+                
+                return {
+                    frequencies: frequencies,
+                    power: power,
+                    whiteNoise: whiteNoise,
+                    redNoise: redNoise
+                };
+            }
+            
+            // 正常情况下的FFT计算
+            for (let k = 0; k < n/2; k++) {
+                let real = 0, imag = 0;
+                for (let i = 0; i < n; i++) {
+                    const angle = -2 * Math.PI * k * i / n;
+                    real += data[i] * Math.cos(angle);
+                    imag += data[i] * Math.sin(angle);
+                }
+                fft[k] = (real * real + imag * imag) / n;
+            }
+            
+            const frequencies = new Array(Math.floor(n/2));
+            for (let i = 0; i < frequencies.length; i++) {
+                frequencies[i] = i / (n * dt);
+            }
+            
+            // 生成白噪声和红噪声参考线
+            const whiteNoise = new Array(Math.floor(n/2) - 1);
+            const redNoise = new Array(Math.floor(n/2) - 1);
+            
+            // 计算数据方差作为白噪声参考线的基准
+            const variance = data.reduce((acc, val) => acc + val * val, 0) / n;
+            
+            for (let i = 0; i < whiteNoise.length; i++) {
+                // 白噪声: 功率谱是平的
+                whiteNoise[i] = variance;
+                
+                // 红噪声: 功率谱随频率降低，斜率为-2 (f^(-2))
+                const freq = frequencies[i+1];
+                redNoise[i] = variance * 10 / (freq * freq);
+            }
+            
+            return { 
+                frequencies: frequencies.slice(1), 
+                power: fft.slice(1, Math.floor(n/2)),
+                whiteNoise: whiteNoise,
+                redNoise: redNoise
+            };
+        }
+
+        // 计算自相关函数
+        function computeAutocorrelation(data, totalTime, dt) {
+            const n = data.length;
+            if (n === 0) return [];
+            
+            // 检查数据是否为纯衰减过程（无噪声情况）
+            const isExponentialDecay = data[0] > 0 && 
+                                      data.every((val, i) => i === 0 || (val < data[i-1] && val >= 0));
+            
+            // 对于纯衰减过程，我们可以直接计算理论自相关函数
+            if (isExponentialDecay && data.some(val => val > 0)) {
+                const lambda = parseFloat(lambdaSlider.value);
+                if (lambda > 0) {
+                    // 计算到积分时长的一半
+                    let maxLag = Math.min(Math.floor(n / 2), Math.floor(totalTime / (2 * dt)));
+                    maxLag = Math.max(1, maxLag); // 确保maxLag至少为1
+                    
+                    // 对于一阶自回归过程，自相关函数是指数衰减的
+                    const autocorr = new Array(maxLag);
+                    for (let lag = 0; lag < maxLag; lag++) {
+                        autocorr[lag] = Math.exp(-lambda * lag * dt);
+                    }
+                    return autocorr;
+                }
+            }
+            
+            const mean = data.reduce((a, b) => a + b) / n;
+            const variance = data.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+            
+            // 如果数据没有方差或方差极小，创建一个特殊的自相关函数
+            if (variance < 1e-10) {
+                // 计算到积分时长的一半
+                let maxLag = Math.min(Math.floor(n / 2), Math.floor(totalTime / (2 * dt)));
+                maxLag = Math.max(1, maxLag); // 确保maxLag至少为1
+                
+                // 对于常数信号，自相关函数全为1
+                return new Array(maxLag).fill(1);
+            }
+            
+            // 计算到积分时长的一半，确保maxLag至少为1
+            let maxLag = Math.min(Math.floor(n / 2), Math.floor(totalTime / (2 * dt)));
+            maxLag = Math.max(1, maxLag); // 确保maxLag至少为1
+            
+            const autocorr = new Array(maxLag);
+            for (let lag = 0; lag < maxLag; lag++) {
+                let sum = 0;
+                for (let i = 0; i < n - lag; i++) {
+                    sum += (data[i] - mean) * (data[i + lag] - mean);
+                }
+                autocorr[lag] = sum / ((n - lag) * variance);
+            }
+            
+            return autocorr;
+        }
+
+        // 计算统计量
+        function computeStatistics(data, lambda) {
+            const mean = data.reduce((a, b) => a + b) / data.length;
+            const variance = data.reduce((a, b) => a + (b - mean) ** 2, 0) / data.length;
+            const std = Math.sqrt(variance);
+            
+            // 处理lambda为0的特殊情况
+            const efoldingTime = lambda > 0 ? 1 / lambda : Infinity;
+            
+            // 计算lag-1自相关 (只需要计算到lag=1即可)
+            // 这里使用简单方法直接计算lag-1自相关，而不调用完整的自相关函数
+            let lag1Sum = 0;
+            for (let i = 0; i < data.length - 1; i++) {
+                lag1Sum += (data[i] - mean) * (data[i + 1] - mean);
+            }
+            const lag1Corr = variance > 0 ? lag1Sum / ((data.length - 1) * variance) : 0;
+            
+            return { mean, std, variance, efoldingTime, lag1Corr };
+        }
+
+        // 初始化图表
+        function initializeCharts() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const textColor = isDark ? '#ffffff' : '#374151';
+            const gridColor = isDark ? '#374151' : '#e5e7eb';
+
+            // 时间序列图
+            const timeSeriesCtx = document.getElementById('timeSeriesChart').getContext('2d');
+            timeSeriesChart = new Chart(timeSeriesCtx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'SST异常 (°C)',
+                            data: [],
+                            borderColor: '#5D5CDE',
+                            backgroundColor: 'rgba(93, 92, 222, 0.1)',
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            order: 1
+                        },
+                        {
+                            label: '噪声',
+                            data: [],
+                            borderColor: 'rgba(156, 163, 175, 0.7)',
+                            backgroundColor: 'rgba(156, 163, 175, 0.05)',
+                            borderWidth: 1,
+                            borderDash: [3, 3],
+                            pointRadius: 0,
+                            order: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: { display: true, text: '时间 (年)', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 确保显示正确的年份，最多保留2位小数
+                                    return Number(value).toFixed(2);
+                                }
+                            },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            title: { display: true, text: 'SST异常 (°C)', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 格式化温度数值，保留1位小数
+                                    return parseFloat(value).toFixed(1);
+                                }
+                            },
+                            grid: { color: gridColor },
+                            // 不设置固定范围，让Chart.js自动调整
+                            // 在updateCharts函数中会根据数据动态设置
+                        }
+                    },
+                    parsing: {
+                        xAxisKey: 'x',
+                        yAxisKey: 'y'
+                    }
+                }
+            });
+
+            // 功率谱图
+            const powerSpectrumCtx = document.getElementById('powerSpectrumChart').getContext('2d');
+            powerSpectrumChart = new Chart(powerSpectrumCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'SST功率谱',
+                            data: [],
+                            borderColor: '#dc2626',
+                            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0
+                        },
+                        {
+                            label: '噪声功率谱',
+                            data: [],
+                            borderColor: 'rgba(156, 163, 175, 0.9)',
+                            backgroundColor: 'rgba(156, 163, 175, 0.05)',
+                            borderWidth: 1.5,
+                            borderDash: [3, 3],
+                            pointRadius: 0
+                        },
+                        {
+                            label: '白噪声参考',
+                            data: [],
+                            borderColor: 'rgba(0, 0, 0, 0.5)',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        },
+                        {
+                            label: '红噪声参考',
+                            data: [],
+                            borderColor: 'rgba(255, 0, 0, 0.5)',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    // 将频率转换为周期显示在工具提示中
+                                    const freq = tooltipItems[0].parsed.x;
+                                    const period = freq > 0 ? (1 / freq).toFixed(1) : 0;
+                                    return `周期: ${period} 年`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'logarithmic',
+                            title: { display: true, text: '周期 (年)', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 将频率转换为周期，并限制小数点，不添加"年"单位
+                                    return (1 / value).toFixed(1);
+                                }
+                            },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            type: 'logarithmic',
+                            title: { display: true, text: '功率', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 格式化对数刻度上的数值
+                                    if (value >= 1) {
+                                        return value.toFixed(0);
+                                    } else if (value >= 0.1) {
+                                        return value.toFixed(1);
+                                    } else {
+                                        return value.toFixed(2);
+                                    }
+                                }
+                            },
+                            grid: { color: gridColor },
+                            min: 0.001,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // 自相关图
+            const autocorrCtx = document.getElementById('autocorrChart').getContext('2d');
+            autocorrChart = new Chart(autocorrCtx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'SST自相关',
+                            data: [],
+                            borderColor: '#059669',
+                            backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0
+                        },
+                        {
+                            label: '噪声自相关',
+                            data: [],
+                            borderColor: 'rgba(156, 163, 175, 0.9)',
+                            backgroundColor: 'rgba(156, 163, 175, 0.05)',
+                            borderWidth: 1.5,
+                            borderDash: [3, 3],
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: { display: true, text: '滞后时间 (年)', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 确保显示正确的年份，最多保留2位小数
+                                    return Number(value).toFixed(2);
+                                }
+                            },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            title: { display: true, text: '相关系数', color: textColor },
+                            ticks: { 
+                                color: textColor,
+                                callback: function(value) {
+                                    // 格式化相关系数，保留2位小数
+                                    return parseFloat(value).toFixed(2);
+                                }
+                            },
+                            grid: { color: gridColor },
+                            min: -0.5,
+                            max: 1
+                        }
+                    },
+                    parsing: {
+                        xAxisKey: 'x',
+                        yAxisKey: 'y'
+                    }
+                }
+            });
+        }
+
+        // 运行模型
+        function runModel() {
+            // 获取参数
+            const lambda = parseFloat(lambdaSlider.value);
+            const sigma = parseFloat(sigmaSlider.value);
+            const noiseType = noiseTypeSelect.value;
+            const redNoiseAlpha = parseFloat(redNoiseAlphaSlider.value);
+            const totalTime = parseFloat(totalTimeSlider.value);
+            const dt = parseFloat(dtSlider.value);
+            
+            // 计算时间步数
+            const nSteps = Math.floor(totalTime / dt);
+            
+            // 生成噪声
+            const noise = generateNoise(noiseType, nSteps, sigma, redNoiseAlpha);
+            
+            // 积分Hasselmann模型
+            const temperature = integrateHasselmannModel(lambda, noise, dt);
+            
+            // 创建时间数组 - 确保单位是年
+            const time = new Array(nSteps);
+            for (let i = 0; i < nSteps; i++) {
+                time[i] = i * dt;
+            }
+            
+            // 计算SST的功率谱
+            const sstSpectrum = computePowerSpectrum(temperature, dt);
+            
+            // 计算噪声的功率谱
+            const noiseSpectrum = computePowerSpectrum(noise, dt);
+            
+            // 计算SST的自相关函数
+            const sstAutocorr = computeAutocorrelation(temperature, totalTime, dt);
+            const autocorrLags = new Array(sstAutocorr.length);
+            for (let i = 0; i < sstAutocorr.length; i++) {
+                // 确保滞后时间单位正确（年）
+                autocorrLags[i] = i * dt;
+            }
+            
+            // 计算噪声的自相关函数
+            const noiseAutocorr = computeAutocorrelation(noise, totalTime, dt);
+            
+            // 计算统计量
+            const stats = computeStatistics(temperature, lambda);
+            
+            // 更新图表
+            updateCharts(time, temperature, noise, sstSpectrum, noiseSpectrum, autocorrLags, sstAutocorr, noiseAutocorr);
+            
+            // 更新统计信息
+            updateStatistics(stats);
+        }
+
+        // 更新图表
+        function updateCharts(time, temperature, noise, sstSpectrum, noiseSpectrum, autocorrLags, sstAutocorr, noiseAutocorr) {
+            // 时间序列图 - SST和噪声
+            timeSeriesChart.data.labels = time;
+            
+            // 创建SST数据点对象数组
+            const sstTimeSeriesData = temperature.map((temp, i) => ({
+                x: time[i],
+                y: temp
+            }));
+            timeSeriesChart.data.datasets[0].data = sstTimeSeriesData;
+            
+            // 创建噪声数据点对象数组
+            const noiseTimeSeriesData = noise.map((n, i) => ({
+                x: time[i],
+                y: n
+            }));
+            timeSeriesChart.data.datasets[1].data = noiseTimeSeriesData;
+            
+            // 动态调整时间序列图的Y轴范围
+            if (temperature.length > 0) {
+                // 计算SST和噪声数据的最小值和最大值
+                const minTemp = Math.min(...temperature);
+                const maxTemp = Math.max(...temperature);
+                const minNoise = Math.min(...noise);
+                const maxNoise = Math.max(...noise);
+                
+                // 取两者的极值
+                const minValue = Math.min(minTemp, minNoise);
+                const maxValue = Math.max(maxTemp, maxNoise);
+                
+                // 设置Y轴范围，留出10%的边距
+                const range = maxValue - minValue;
+                const padding = range * 0.1;
+                timeSeriesChart.options.scales.y.min = minValue - padding;
+                timeSeriesChart.options.scales.y.max = maxValue + padding;
+            }
+            
+            timeSeriesChart.update();
+            
+            // 功率谱图
+            powerSpectrumChart.data.labels = sstSpectrum.frequencies;
+            powerSpectrumChart.data.datasets[0].data = sstSpectrum.power;
+            powerSpectrumChart.data.datasets[1].data = noiseSpectrum.power;
+            powerSpectrumChart.data.datasets[2].data = sstSpectrum.whiteNoise;
+            powerSpectrumChart.data.datasets[3].data = sstSpectrum.redNoise;
+            
+            // 调整X轴范围到Nyquist频率（积分时长的一半）
+            const totalTime = parseFloat(totalTimeSlider.value);
+            const minFreq = 1 / totalTime;
+            const maxFreq = 1 / (2 * parseFloat(dtSlider.value)); // Nyquist频率
+            
+            powerSpectrumChart.options.scales.x.min = minFreq;
+            powerSpectrumChart.options.scales.x.max = maxFreq;
+            
+            // 动态调整功率谱图的Y轴范围（对于对数坐标）
+            if (sstSpectrum.power.length > 0 && noiseSpectrum.power.length > 0) {
+                const allValues = [
+                    ...sstSpectrum.power, 
+                    ...noiseSpectrum.power, 
+                    ...sstSpectrum.whiteNoise, 
+                    ...sstSpectrum.redNoise
+                ].filter(v => v > 0);
+                
+                if (allValues.length > 0) {
+                    const minPower = Math.min(...allValues);
+                    const maxPower = Math.max(...allValues);
+                    
+                    // 对数坐标需要不同的边距处理
+                    powerSpectrumChart.options.scales.y.min = minPower * 0.1;
+                    powerSpectrumChart.options.scales.y.max = maxPower * 10;
+                }
+            }
+            
+            powerSpectrumChart.update();
+            
+            // 自相关图 - SST和噪声
+            autocorrChart.data.labels = autocorrLags;
+            
+            // 创建SST自相关数据点对象数组
+            const sstAutocorrData = sstAutocorr.map((corr, i) => ({
+                x: autocorrLags[i],
+                y: corr
+            }));
+            autocorrChart.data.datasets[0].data = sstAutocorrData;
+            
+            // 创建噪声自相关数据点对象数组
+            const noiseAutocorrData = noiseAutocorr.map((corr, i) => ({
+                x: autocorrLags[i],
+                y: corr
+            }));
+            autocorrChart.data.datasets[1].data = noiseAutocorrData;
+            
+            // 自相关函数的Y轴范围通常固定在[-1, 1]之间
+            // 但我们可以根据实际数据微调
+            if (sstAutocorr.length > 0 && noiseAutocorr.length > 0) {
+                const minSSTCorr = Math.min(...sstAutocorr);
+                const minNoiseCorr = Math.min(...noiseAutocorr);
+                const minCorr = Math.min(minSSTCorr, minNoiseCorr);
+                
+                // 如果最小值小于-0.5，则调整下限
+                if (minCorr < -0.5) {
+                    autocorrChart.options.scales.y.min = Math.floor(minCorr * 10) / 10; // 向下取整到小数点后一位
+                }
+            }
+            
+            autocorrChart.update();
+        }
+
+        // 更新统计信息
+        function updateStatistics(stats) {
+            meanValueSpan.textContent = stats.mean.toFixed(3);
+            stdValueSpan.textContent = stats.std.toFixed(3);
+            varValueSpan.textContent = stats.variance.toFixed(3);
+            
+            // 处理e-folding时间为无穷大的情况（当lambda=0时）
+            efoldingTimeSpan.textContent = isFinite(stats.efoldingTime) 
+                ? stats.efoldingTime.toFixed(1) + ' 年' 
+                : '∞ (无衰减)';
+                
+            lag1CorrSpan.textContent = stats.lag1Corr.toFixed(3);
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            // 不自动运行模型，等待用户点击运行按钮
+        });
+    </script>
+</body>
+</html>

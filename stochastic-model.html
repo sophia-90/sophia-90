@@ -60,27 +60,45 @@
                     </div>
                 </div>
 
-                <!-- 噪声类型 -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        噪声类型
-                    </label>
-                    <select id="noiseType" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white text-base">
-                        <option value="white">白噪声</option>
-                        <option value="red">红噪声 (AR1)</option>
-                        <option value="pink">粉红噪声</option>
-                    </select>
-                </div>
-
-                <!-- 红噪声系数 -->
-                <div id="redNoiseDiv" style="display: none;">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        红噪声系数 α
-                    </label>
-                    <input type="range" id="redNoiseAlpha" min="0.1" max="0.95" step="0.05" value="0.7" 
-                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        值: <span id="redNoiseAlphaValue">0.7</span>
+                <!-- 噪声类型和红噪声系数（放在同一行） -->
+                <div class="col-span-1 lg:col-span-2">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex-1 min-w-[140px]">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                噪声类型
+                            </label>
+                            <select id="noiseType" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white text-base">
+                                <option value="white">白噪声</option>
+                                <option value="red">红噪声 (AR1)</option>
+                                <option value="pink">粉红噪声</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex-1 min-w-[140px]">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                红噪声系数 α
+                            </label>
+                            <input type="range" id="redNoiseAlpha" min="0.1" max="0.95" step="0.05" value="0.7" 
+                                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                值: <span id="redNoiseAlphaValue">0.7</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 固定噪声按钮 -->
+                        <div class="flex-none">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                固定噪声
+                            </label>
+                            <div class="flex items-center">
+                                <button id="fixNoiseBtn" class="h-10 px-4 rounded-md flex items-center justify-center border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors focus:outline-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                    <span id="fixNoiseStatus">固定噪声</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -113,7 +131,11 @@
                 <!-- 运行按钮 -->
                 <div class="flex items-end">
                     <button id="runModel" 
-                            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-4 rounded-lg transition-colors">
+                            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
                         运行模型
                     </button>
                 </div>
@@ -218,6 +240,17 @@
         const totalTimeSlider = document.getElementById('totalTime');
         const dtSlider = document.getElementById('dt');
         const runButton = document.getElementById('runModel');
+        const fixNoiseBtn = document.getElementById('fixNoiseBtn');
+        const fixNoiseStatus = document.getElementById('fixNoiseStatus');
+
+        // 固定噪声相关变量
+        let isNoiseFixed = false;
+        let fixedNoiseSequence = null;
+        let fixedNoiseType = null;
+        let fixedNoiseAlpha = null;
+        let fixedNoiseBaseAmplitude = 1.0;
+        let fixedTotalTime = null;
+        let fixedDt = null;
 
         // 值显示元素
         const lambdaValue = document.getElementById('lambdaValue');
@@ -225,7 +258,6 @@
         const redNoiseAlphaValue = document.getElementById('redNoiseAlphaValue');
         const totalTimeValue = document.getElementById('totalTimeValue');
         const dtValue = document.getElementById('dtValue');
-        const redNoiseDiv = document.getElementById('redNoiseDiv');
 
         // 统计显示元素
         const meanValueSpan = document.getElementById('meanValue');
@@ -238,18 +270,132 @@
         lambdaSlider.addEventListener('input', () => lambdaValue.textContent = lambdaSlider.value);
         sigmaSlider.addEventListener('input', () => sigmaValue.textContent = sigmaSlider.value);
         redNoiseAlphaSlider.addEventListener('input', () => redNoiseAlphaValue.textContent = redNoiseAlphaSlider.value);
-        totalTimeSlider.addEventListener('input', () => totalTimeValue.textContent = totalTimeSlider.value);
-        dtSlider.addEventListener('input', () => dtValue.textContent = dtSlider.value);
+        totalTimeSlider.addEventListener('input', () => {
+            totalTimeValue.textContent = totalTimeSlider.value;
+        });
+        dtSlider.addEventListener('input', () => {
+            dtValue.textContent = dtSlider.value;
+        });
 
-        noiseTypeSelect.addEventListener('change', () => {
+        // 初始化时设置红噪声参数的状态
+        updateRedNoiseAlphaState();
+
+        noiseTypeSelect.addEventListener('change', updateRedNoiseAlphaState);
+
+        // 更新红噪声参数状态的函数
+        function updateRedNoiseAlphaState() {
             if (noiseTypeSelect.value === 'red') {
-                redNoiseDiv.style.display = 'block';
+                redNoiseAlphaSlider.disabled = false;
+                redNoiseAlphaSlider.classList.remove('opacity-50', 'cursor-not-allowed');
             } else {
-                redNoiseDiv.style.display = 'none';
+                redNoiseAlphaSlider.disabled = true;
+                redNoiseAlphaSlider.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // 添加禁用元素的工具提示
+        function addTooltip(element, message) {
+            element.title = message;
+        }
+
+        // 运行按钮事件监听器
+        runButton.addEventListener('click', runModel);
+
+        // 固定噪声按钮点击事件
+        fixNoiseBtn.addEventListener('click', function() {
+            isNoiseFixed = !isNoiseFixed;
+            if (isNoiseFixed) {
+                // 固定当前噪声
+                fixNoiseStatus.textContent = '取消固定';
+                fixNoiseBtn.classList.remove('bg-gray-100', 'dark:bg-gray-700');
+                fixNoiseBtn.classList.add('bg-green-500', 'dark:bg-green-600', 'text-white');
+                
+                // 禁用噪声类型和模拟时间参数，但允许调整积分步长
+                noiseTypeSelect.disabled = true;
+                noiseTypeSelect.classList.add('opacity-50', 'cursor-not-allowed');
+                addTooltip(noiseTypeSelect, '固定噪声时不能更改噪声类型');
+                
+                totalTimeSlider.disabled = true;
+                totalTimeSlider.classList.add('opacity-50', 'cursor-not-allowed');
+                addTooltip(totalTimeSlider, '固定噪声时不能更改模拟时间');
+                
+                // 保存当前设置
+                fixedTotalTime = parseFloat(totalTimeSlider.value);
+                fixedDt = parseFloat(dtSlider.value);
+                fixedNoiseType = noiseTypeSelect.value;
+                fixedNoiseAlpha = parseFloat(redNoiseAlphaSlider.value);
+                fixedNoiseBaseAmplitude = parseFloat(sigmaSlider.value);
+                
+                // 关键步骤：生成高精度的基础噪声序列
+                // 使用最小步长(0.01)生成噪声序列，这样可以在后续任意步长下进行采样
+                // 这确保了在不同积分步长下噪声模式的一致性
+                const minDt = 0.01; // 最小步长
+                const nStepsBase = Math.floor(fixedTotalTime / minDt);
+                
+                // 生成高精度基础噪声序列
+                const baseNoiseSequence = generateBaseNoise(fixedNoiseType, nStepsBase, 1.0, fixedNoiseAlpha);
+                fixedNoiseSequence = baseNoiseSequence;
+                
+                // 不再自动运行模型
+                // runModel();
+            } else {
+                // 解除固定
+                fixNoiseStatus.textContent = '固定噪声';
+                fixNoiseBtn.classList.remove('bg-green-500', 'dark:bg-green-600', 'text-white');
+                fixNoiseBtn.classList.add('bg-gray-100', 'dark:bg-gray-700');
+                
+                // 启用噪声类型和时间参数
+                noiseTypeSelect.disabled = false;
+                noiseTypeSelect.classList.remove('opacity-50', 'cursor-not-allowed');
+                noiseTypeSelect.removeAttribute('title');
+                
+                totalTimeSlider.disabled = false;
+                totalTimeSlider.classList.remove('opacity-50', 'cursor-not-allowed');
+                totalTimeSlider.removeAttribute('title');
+                
+                // 更新红噪声参数状态
+                updateRedNoiseAlphaState();
+                
+                // 清除固定噪声数据
+                fixedNoiseSequence = null;
+                fixedNoiseType = null;
+                fixedNoiseAlpha = null;
+                fixedTotalTime = null;
+                fixedDt = null;
             }
         });
 
-        runButton.addEventListener('click', runModel);
+        // 生成基础噪声序列（高精度）
+        function generateBaseNoise(type, length, sigma, alpha) {
+            let noise = new Array(length);
+            
+            // 如果噪声强度为0，返回全0数组
+            if (sigma === 0) {
+                return noise.fill(0);
+            }
+            
+            if (type === 'white') {
+                for (let i = 0; i < length; i++) {
+                    noise[i] = sigma * gaussianRandom();
+                }
+            } else if (type === 'red') {
+                noise[0] = sigma * gaussianRandom();
+                for (let i = 1; i < length; i++) {
+                    noise[i] = alpha * noise[i-1] + sigma * Math.sqrt(1 - alpha*alpha) * gaussianRandom();
+                }
+            } else if (type === 'pink') {
+                // 简化的粉红噪声生成
+                for (let i = 0; i < length; i++) {
+                    noise[i] = sigma * gaussianRandom();
+                }
+                // 应用低通滤波器近似粉红噪声
+                for (let i = 1; i < length; i++) {
+                    noise[i] = 0.7 * noise[i-1] + 0.3 * noise[i];
+                }
+            }
+            
+            return noise;
+        }
 
         // 随机数生成器
         function gaussianRandom() {
@@ -258,8 +404,47 @@
             return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
         }
 
+        // 从固定噪声序列中获取指定步长的噪声
+        function getNoiseFromFixed(dt, totalTime, sigma) {
+            if (!fixedNoiseSequence) return null;
+            
+            // 使用固定的总时间，而不是传入的参数
+            const nSteps = Math.floor(fixedTotalTime / dt);
+            const result = new Array(nSteps);
+            const minDt = 0.01; // 与生成基础序列时使用的最小步长相同
+            const baseLength = fixedNoiseSequence.length;
+            const scaleFactor = sigma / fixedNoiseBaseAmplitude;
+            
+            // 关键步骤：根据当前步长从高精度噪声序列中采样
+            // 例如，如果当前步长是0.1，而基础序列步长是0.01，
+            // 则每隔10个点取一个点，这确保了不同步长下噪声模式的一致性
+            for (let i = 0; i < nSteps; i++) {
+                // 计算在基础序列中的位置
+                const baseIndex = Math.floor(i * dt / minDt);
+                
+                // 确保索引在有效范围内
+                if (baseIndex < baseLength) {
+                    // 根据当前噪声强度对固定噪声进行等比例缩放
+                    result[i] = fixedNoiseSequence[baseIndex] * scaleFactor;
+                } else {
+                    result[i] = 0; // 超出范围部分设为0
+                }
+            }
+            
+            return result;
+        }
+
         // 生成不同类型的噪声
         function generateNoise(type, length, sigma, alpha = 0.7) {
+            // 如果噪声被固定，从固定序列中获取噪声
+            if (isNoiseFixed) {
+                // 使用当前步长但固定的总时间
+                const dt = parseFloat(dtSlider.value);
+                return getNoiseFromFixed(dt, fixedTotalTime, sigma);
+            }
+
+            // 常规模式：根据当前参数直接生成噪声
+            // 注意：这里使用的是当前选择的积分步长，而不是最小步长
             let noise = new Array(length);
             
             // 如果噪声强度为0，返回全0数组
@@ -784,7 +969,6 @@
             
             // 动态调整时间序列图的Y轴范围
             if (temperature.length > 0) {
-                // 计算SST和噪声数据的最小值和最大值
                 const minTemp = Math.min(...temperature);
                 const maxTemp = Math.max(...temperature);
                 const minNoise = Math.min(...noise);
